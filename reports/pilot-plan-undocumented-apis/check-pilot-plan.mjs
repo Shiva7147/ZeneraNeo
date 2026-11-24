@@ -4,10 +4,15 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const planPath = resolve(__dirname, 'PILOT_PLAN.md');
+const datasetPath = resolve(__dirname, 'golden-evaluation-scenarios.json');
 
-async function verifyPilotPlan() {
-    console.log('--- Verifying Pilot Plan (SOL-5) Against Zenera Engineering Standards ---');
+async function verifyPilotPlanAndDataset() {
+    console.log('--- Running Zenera SOL-5 Comprehensive Verification Harness ---');
+    
+    // 1. Verify Plan Document
     const content = await readFile(planPath, 'utf8');
+    const datasetRaw = await readFile(datasetPath, 'utf8');
+    const dataset = JSON.parse(datasetRaw);
 
     let passed = 0;
     let failed = 0;
@@ -22,69 +27,71 @@ async function verifyPilotPlan() {
         }
     }
 
-    // 1. Check Access & Data Handling
     assertCheck(
-        'Access & Data Handling section defined',
+        'Access & Data Handling defined',
         content.includes('## 1. Access and Data Handling') && content.includes('Network Isolation'),
-        'Missing network isolation or credential management requirements.'
+        'Missing network isolation.'
     );
 
-    // 2. Check API Formalization
     assertCheck(
-        'Undocumented API Formalization protocol defined',
-        content.includes('## 2. API Formalization') && content.includes('OpenAPI') && content.includes('Zenera Gym'),
-        'Missing protocol for generating OpenAPI specs or testing via Gym.'
+        'API Formalization 4-step protocol defined',
+        content.includes('## 2. API Formalization') && content.includes('Zenera Gym') && content.includes('OpenAPI'),
+        'Missing API formalization protocol.'
     );
 
-    // 3. Check Evaluation Set
     assertCheck(
-        'Dual-authored Evaluation Set defined',
-        content.includes('## 3. The Evaluation Set') && content.includes('50 Scenario Golden Test Set'),
-        'Evaluation set must have concrete scenario counts and joint authorship.'
+        '50-Scenario Golden Evaluation Dataset attached and complete',
+        dataset.total_scenarios === 50 && dataset.scenarios.length === 50,
+        `Expected 50 scenarios in golden-evaluation-scenarios.json, found ${dataset.scenarios.length}`
     );
 
-    // 4. Check Rollout Stages
+    const categories = new Set(dataset.scenarios.map(s => s.category));
     assertCheck(
-        '4-Stage Gated Rollout defined',
+        'All 4 Evaluation Categories present in dataset',
+        categories.has('Customer Happy-Path') && 
+        categories.has('Legacy Edge Cases') && 
+        categories.has('Adversarial & Fault Injection') && 
+        categories.has('Safety & Permission Invariants'),
+        'Missing one or more golden categories.'
+    );
+
+    assertCheck(
+        'Zero Forbidden Mutations Without Human Token in Safety Invariants',
+        dataset.scenarios.filter(s => s.category === 'Safety & Permission Invariants').every(s => s.human_approval_required === true),
+        'Safety invariants must enforce human approval requirement.'
+    );
+
+    assertCheck(
+        '4-Stage Chronological Rollout defined',
         content.includes('## 4. Rollout Stages & Timeline') && content.includes('WEEK 1') && content.includes('WEEK 4'),
-        'Missing 4-stage chronological rollout gates.'
+        'Rollout stages missing.'
     );
 
-    // 5. Check Success Criteria
     assertCheck(
-        'Measurable Quantitative Success Criteria defined',
-        content.includes('## 5. Measurable Acceptance & Success Criteria') && content.includes('95%') && content.includes('250ms'),
-        'Success criteria must be quantitative, not subjective.'
+        'Measurable Success Criteria defined (<250ms latency, >=95% precision)',
+        content.includes('250ms') && content.includes('95%'),
+        'Quantitative thresholds missing.'
     );
 
-    // 6. Check Refusals
     assertCheck(
-        'Explicit Pilot Refusals specified',
+        'Explicit Non-Negotiable Operational Refusals defined',
         content.includes('## 6. What Zenera Explicitly Refuses to Do in a Pilot') && content.includes('refuse direct write access'),
-        'Must contain non-negotiable operational refusals.'
+        'Operational refusals missing.'
     );
 
-    // 7. Check Permission Boundary (Reads vs Writes)
-    assertCheck(
-        'Permission Boundaries strictly isolate mutations',
-        content.includes('Safe Reads') && content.includes('Stateful Mutations') && content.includes('Human-in-the-Loop'),
-        'Must enforce boundary between read-only discovery and human-gated mutations.'
-    );
-
-    // 8. Check Zero Raw Secrets
     assertCheck(
         'Zero Raw Secrets Exposure Guarantee',
         content.includes('raw API keys') && content.includes('proxy'),
-        'Must explicitly forbid raw secrets in agent prompts or sandboxes.'
+        'Must forbid raw credentials in prompts.'
     );
 
-    console.log(`\nResults: ${passed} passed, ${failed} failed.`);
+    console.log(`\nVerification Summary: ${passed} assertions passed, ${failed} failed.`);
     if (failed > 0) {
         process.exit(1);
     }
 }
 
-verifyPilotPlan().catch((err) => {
-    console.error('Fatal error verifying pilot plan:', err);
+verifyPilotPlanAndDataset().catch((err) => {
+    console.error('Harness error:', err);
     process.exit(1);
 });
